@@ -11,6 +11,7 @@
 #include <string.h>
 #include <math.h>
 #include <errno.h>
+#include <signal.h>
 
 #define CONNECTMSGID 5
 #define BODYMSGID 6
@@ -39,7 +40,5 @@ int read_message (int qid, long type, struct my_message *qbuf );
 int read_message_noblock (int qid, long type, struct my_message *qbuf );
 
 int open_queue (key_t keyval);
-
-void printAThing ();
 
 #endif

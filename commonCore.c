@@ -55,9 +55,4 @@ int open_queue (key_t keyval)
 	 }
 
 	 return (qid);
-} 
-
-void printAThing()
-{
-	printf("%s\n", "sup");
 }

@@ -26,11 +26,6 @@ int main (int argc , char *argv[])
 	struct my_message recvBuf;
 	int qid = open_queue(6969);
 
-	// if (msgctl (qid, IPC_RMID, 0) < 0)
- //    {
- //      perror ("msgctl (remove queue) failed!");
- //      exit (3);
- //    }
 
 	memset(msgSend.mtext, '\0', MTEXTLEN);
 
