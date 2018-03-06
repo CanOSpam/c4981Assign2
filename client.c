@@ -43,7 +43,7 @@ int main (int argc , char *argv[])
 	do
 	{
 		read_message(qid, pid, &recvBuf);
-		printf("%s\n", recvBuf.mtext);
+		printf("%s", recvBuf.mtext);
 	}
 	while(recvBuf.mtext[0] != 4);
 

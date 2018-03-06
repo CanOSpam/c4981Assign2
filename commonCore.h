@@ -16,8 +16,9 @@
 #define CONNECTMSGID 5
 #define BODYMSGID 6
 #define MSGDELIMITER 22
-#define MTEXTLEN 256
+#define MTEXTLEN 1024
 #define MAXCLIENTS 30
+#define MQKEY 6969
 
 struct my_message
  {
