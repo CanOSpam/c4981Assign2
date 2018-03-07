@@ -1,7 +1,7 @@
 #ifndef COMMONCORE_H_
 #define COMMONCORE_H_
 
-/*--------- includes for message passing ----*/
+/*--------- includes required in the program ----*/
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/ipc.h>
@@ -17,7 +17,6 @@
 
 #define CONNECTMSGID 98
 #define DIEMSGID 99
-#define BODYMSGID 6
 #define MTEXTLEN 1024
 #define MQKEY 6969
 

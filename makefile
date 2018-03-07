@@ -4,7 +4,7 @@ OPTS = -Wall
 all: server client
 
 client: client.o commonCore.o
-	$(CC) $(CFLAGS) commonCore.o client.o -o client
+	$(CC) $(CFLAGS) commonCore.o client.o -o client -lm -lpthread
 
 server: server.o commonCore.o
 	$(CC) $(CFLAGS) commonCore.o server.o -o server
