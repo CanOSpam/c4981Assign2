@@ -1,86 +1,141 @@
+/*------------------------------------------------------------------------------------------------------------------
+-- SOURCE FILE: server.c - 
+--
+-- PROGRAM: Message Queue Assignment
+--
+-- FUNCTIONS:
+-- void getSem(int sid)
+-- void releaseSem(int sid)
+-- int initsem (key_t key)
+-- void quitEverything(int numClients, int qid, int semid)
+--
+--
+-- DATE: March 7, 2018
+--
+-- REVISIONS: None
+--
+-- DESIGNER: Tim Bruecker
+--
+-- PROGRAMMER: Tim Bruecker
+--
+-- NOTES:
+-- The program is the server for a number of clients. Up to 10 clients can be reliably served, after 10 clients behaviour
+-- of the program starts to become unreliable on my machine (MacBook Pro mid 2012) due to the CPU being maxed. It waits for
+-- a new connection to be received by reading the CONNECTMSGID id. When a connection is received, the server forks a new
+-- process. It then checks if the file is valid, if it is, it begins reading and sending the file. If it isn't it sends
+-- a error message to the client. The server also monitors for a quit message on the CONNECTMSGID id, if it receives one,
+-- it sends kill messages to all the clients, and destroys the queue and semaphores.
+----------------------------------------------------------------------------------------------------------------------*/
 #include "commonCore.h"
 
-int getEmptyClientID(struct connected_client clientList[]);
-void initClientList(struct connected_client clientList[]);
-void deleteClient(struct connected_client clientList[], int id);
 
+void getSem(int sid);
+void releaseSem(int sid);
+int initsem (key_t key);
+void quitEverything(int numClients, int qid, int semid);
 
+/*------------------------------------------------------------------------------------------------------------------
+-- FUNCTION: main
+--
+-- DATE: March 7, 2018
+--
+-- REVISIONS: None
+--
+-- DESIGNER: Tim Bruecker
+--
+-- PROGRAMMER: Tim Bruecker
+--
+-- INTERFACE: main (int argc , char *argv[])
+--
+-- RETURNS: 0 to quit.
+--
+-- NOTES:
+-- This is the entry point for the program described in the program header.
+----------------------------------------------------------------------------------------------------------------------*/
 int main (int argc , char *argv[])
 {
 	struct my_message rcvConnects;
-	struct my_message sendBuf;
-	int qid = open_queue(6969);
-	int running = 1;
+	int qid = open_queue(MQKEY);
 	int newConnection;
-	int currClients = 0;
+	int semKey = 100;
+	int semid;
+	int numClients;
 
-	struct connected_client clients[MAXCLIENTS];
-	initClientList(clients);
+	semid = initsem ((key_t)semKey);
+	releaseSem(semid);
 
-	// Polling Loop
-	while(running)
+
+	/* Polling Loop */
+	while(1)
 	{
-		newConnection = read_message_noblock(qid, CONNECTMSGID, &rcvConnects);
+		newConnection = read_message(qid, CONNECTMSGID, &rcvConnects);
 
-		if(newConnection != -1 && currClients < MAXCLIENTS)
+		if(rcvConnects.mtext[0] == '\x03')
 		{
-
-			char tempFileName[MTEXTLEN];
-			int tempPid;
-			int tempPriority;
-			int emptyClient = getEmptyClientID(clients);
-			sscanf(rcvConnects.mtext, "%s %d %d", tempFileName, &tempPid, &tempPriority);
-			printf("New client wants: %s\nAt pid: %d\nWith priority: %d\n\n", tempFileName, tempPid, tempPriority);
-
-			clients[emptyClient].file = fopen(tempFileName, "r");
-			clients[emptyClient].pid = tempPid;
-			clients[emptyClient].priority = tempPriority;
-
-			if(clients[emptyClient].file == NULL)
-			{
-				// Send error string to client
-				strcpy(sendBuf.mtext, "\x04 Error: Invalid filename");
-				sendBuf.mtype = clients[emptyClient].pid;
-				send_message(qid, &sendBuf);
-				deleteClient(clients, emptyClient);
-				perror("Problem opening file");
-			}
-			else
-			{
-				currClients++;
-			}
-
-			
-			newConnection = -1;
+			quitEverything(numClients, qid, semid);
 		}
-		else if (currClients >= MAXCLIENTS)
+		else if(newConnection != -1)
 		{
-			printf("%s\n", "Error: Max Clients reached, wait for a transmission to finish");
-		}
+			FILE *fileHandle;
+			char fileName[MTEXTLEN];
+			int pid;
+			int priority;
+			sscanf(rcvConnects.mtext, "%s %d %d", fileName, &pid,  &priority);
+			printf("New client wants: %s\nAt pid: %d\nWith priority: %d\n\n", fileName, pid, priority);
 
-		for(int i = 0; i < MAXCLIENTS; i++)
-		{
-			if(clients[i].pid != 0)
+
+
+			if(fork())
 			{
-				for(int j = 0; j < clients[i].priority; j++)
+				struct my_message sendBuf;
+				int fileSent = 0;
+				/* Try to open the file */
+				fileHandle = fopen(fileName, "r");
+				if(fileHandle == NULL)
 				{
-					//printf("%s %d\n", "Wrote to", clients[i].pid);
-					fgets(sendBuf.mtext, MTEXTLEN, clients[i].file);
-					sendBuf.mtype = clients[i].pid;
-
+					/* Send error string to client */
+					strcpy(sendBuf.mtext, "\x04 Error: Invalid filename");
+					sendBuf.mtype = pid;
 					send_message(qid, &sendBuf);
-					
-					if(feof(clients[i].file))
-					{
-						strcpy(sendBuf.mtext, "\x04");
-						send_message(qid, &sendBuf);
-						deleteClient(clients, i);
-						currClients--;
-						break;
-					}
-					
+					perror("Problem opening file");
 				}
+				else
+				{
+					/* Send loop */
+					while(!fileSent)
+					{
+						/* Write multipied by priority */
+						getSem(semid);
+						printf("%s%d%s%d\n", "Got sem ID: ", pid, " priority: ", priority);
+						for(int j = 0; j < priority; j++)
+						{
+							printf("Writing to: %d\n", pid);
+							fgets(sendBuf.mtext, MTEXTLEN, fileHandle);
+							sendBuf.mtype = pid;
+
+							send_message(qid, &sendBuf);
+							
+							if(feof(fileHandle))
+							{
+								strcpy(sendBuf.mtext, "\x04");
+								send_message(qid, &sendBuf);
+								fileSent = 1;
+								break;
+							}
+						}
+
+						releaseSem(semid);
+						printf("%s%d\n\n", "Released sem ID: ", pid);
+						sched_yield();
+					}
+					exit(0);
+				}
+				
 			}
+
+			/* Reset connection variable */
+			numClients++;
+			newConnection = -1;
 		}
 		
 	}
@@ -88,34 +143,122 @@ int main (int argc , char *argv[])
 	return 0;
 }
 
-
-int getEmptyClientID(struct connected_client clientList[])
+/*------------------------------------------------------------------------------------------------------------------
+-- FUNCTION: initsem
+--
+-- DATE: March 7, 2018
+--
+-- REVISIONS: None
+--
+-- DESIGNER: Tim Bruecker
+--
+-- PROGRAMMER: Tim Bruecker
+--
+-- INTERFACE: int initsem (key_t key)
+-- 						key_t key: The key to use to generate the semaphore.
+--
+-- RETURNS: An id generated by using the key.
+--
+-- NOTES:
+-- This function generates a semaphore using the key argument and the semget function. Based on a wrapper from milliways.
+----------------------------------------------------------------------------------------------------------------------*/
+int initsem (key_t key)
 {
-	for(int i = 0; i < MAXCLIENTS; i++)
-	{
-		if(clientList[i].pid == 0)
-		{
-			return i;
-		}
-	}
-
-	return -1;
+  int sid;
+  sid = semget( (key_t)key, 1, IPC_CREAT | 0660 );
+  if(sid == -1)
+  {
+  	perror("semget error:\n");
+  }
+  return sid;
 }
 
-void initClientList(struct connected_client clientList[])
+/*------------------------------------------------------------------------------------------------------------------
+-- FUNCTION: getSem
+--
+-- DATE: March 7, 2018
+--
+-- REVISIONS: None
+--
+-- DESIGNER: Tim Bruecker
+--
+-- PROGRAMMER: Tim Bruecker
+--
+-- INTERFACE: void getSem(int sid)
+--
+-- RETURNS: An id generated by using the key.
+--
+-- NOTES:
+-- This function generates a semaphore using the key argument and the semget function. Based on a wrapper from milliways.
+----------------------------------------------------------------------------------------------------------------------*/
+void getSem(int sid)
 {
-	for(int i = 0; i < MAXCLIENTS; i++)
-	{
-		clientList[i].file = NULL;
-		clientList[i].pid = 0;
-		clientList[i].priority = 1;
-	}
+    struct sembuf sembuf_ptr = {0, -1, 0};
+
+    if ((semop(sid, &sembuf_ptr, 1)) == -1)
+    {
+    	perror("semop error\n");
+    }
 }
 
-void deleteClient(struct connected_client clientList[], int id)
+/*------------------------------------------------------------------------------------------------------------------
+-- FUNCTION: initsem
+--
+-- DATE: March 7, 2018
+--
+-- REVISIONS: None
+--
+-- DESIGNER: Tim Bruecker
+--
+-- PROGRAMMER: Tim Bruecker
+--
+-- INTERFACE: int initsem (key_t key)
+-- 						key_t key: The key to use to generate the semaphore.
+--
+-- RETURNS: An id generated by using the key.
+--
+-- NOTES:
+-- This function generates a semaphore using the key argument and the semget function. Based on a wrapper from milliways.
+----------------------------------------------------------------------------------------------------------------------*/
+void releaseSem(int sid)
 {
-	fclose(clientList[id].file);
-	clientList[id].file = NULL;
-	clientList[id].pid = 0;
-	clientList[id].priority = 0;
+	struct sembuf sembuf_ptr = {0, 1, 0};
+
+    if ((semop(sid, &sembuf_ptr, 1)) == -1)
+    {
+    	perror("semop error\n");
+    }
+}
+
+/*------------------------------------------------------------------------------------------------------------------
+-- FUNCTION: checkForKill
+--
+-- DATE: March 7, 2018
+--
+-- REVISIONS: None
+--
+-- DESIGNER: Tim Bruecker
+--
+-- PROGRAMMER: Tim Bruecker
+--
+-- INTERFACE: void* checkForKill( void )
+--
+-- RETURNS: void.
+--
+-- NOTES:
+-- This function waits for a die message to be received from the server. If the message is received it kills the process.
+-- This is run by a thread concurrently to the clients main funtion.
+----------------------------------------------------------------------------------------------------------------------*/
+void quitEverything(int numClients, int qid, int semid)
+{
+	for(int i = 0; i < numClients; i++)
+			{
+				struct my_message killStruct;
+				killStruct.mtype = DIEMSGID;
+				send_message(qid, &killStruct);
+			}
+
+			msgctl (qid, IPC_RMID, 0);
+			semctl(semid, 0, IPC_RMID, 0);
+			kill(0, SIGKILL);
 }

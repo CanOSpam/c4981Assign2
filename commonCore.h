@@ -1,7 +1,7 @@
 #ifndef COMMONCORE_H_
 #define COMMONCORE_H_
 
-/*--------- includes for message passing ----*/
+/*--------- includes required in the program ----*/
 #include <stdio.h>
 #include <sys/types.h>
 #include <sys/ipc.h>
@@ -11,13 +11,13 @@
 #include <string.h>
 #include <math.h>
 #include <errno.h>
+#include <pthread.h>
 #include <signal.h>
+#include <sys/sem.h>
 
-#define CONNECTMSGID 5
-#define BODYMSGID 6
-#define MSGDELIMITER 22
+#define CONNECTMSGID 98
+#define DIEMSGID 99
 #define MTEXTLEN 1024
-#define MAXCLIENTS 30
 #define MQKEY 6969
 
 struct my_message
@@ -25,13 +25,6 @@ struct my_message
     long mtype;
     char mtext[MTEXTLEN];
  };
-
-struct connected_client
-{
-	FILE *file;
-	int pid;
-	int priority;
-};
 
 
 int send_message( int qid, struct my_message *qbuf );
